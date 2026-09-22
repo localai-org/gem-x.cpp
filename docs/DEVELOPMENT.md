@@ -35,6 +35,7 @@ cmake --build build/fuzz -j8
 python3 scripts/seed_fuzz.py build/fuzz/corpus
 build/fuzz/gemx-fuzz-inputs build/fuzz/corpus/inputs -max_total_time=60 -max_len=16384
 build/fuzz/gemx-fuzz-api build/fuzz/corpus/api -max_total_time=60 -max_len=8192
+build/fuzz/gemx-fuzz-streaming -max_total_time=60 -max_len=4096
 (cd demo && GOMAXPROCS=8 go test -race -p 8 ./...)
 (cd demo && GOMAXPROCS=8 go test -parallel 4 -fuzz=FuzzImage -fuzztime=30s -run='^$')
 (cd demo && GOMAXPROCS=8 go test -parallel 4 -fuzz=FuzzPackedBox -fuzztime=30s -run='^$')
@@ -83,3 +84,6 @@ The CI workflow builds CPU and Vulkan, runs model-free contracts and Go tests,
 and performs bounded sanitizer fuzz smoke runs. It requires no model downloads.
 See [the release audit](RELEASE-AUDIT.md) for the independent checkout/toolchain,
 actual fuzz execution counts, install check and remaining limitations.
+
+The resident pose API, optional model-backed lifecycle test, native example and
+pinned SOMA-to-SMPL fixtures are described in [Motion streaming](MOTION-STREAMING.md).

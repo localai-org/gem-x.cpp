@@ -1,0 +1,19 @@
+{
+  "repository": "https://github.com/NVlabs/GR00T-WholeBodyControl",
+  "revision": "7f151314d4d1606544bf249d2a7a1cb754c64582",
+  "sha256": {
+    "gear_sonic/examples/live_camera_teleop/soma_to_smpl.py": "f065d8c3506bd315cf00951a00450e389929f6587acc70bfedbb7070f0eab26c",
+    "gear_sonic/isaac_utils/rotations.py": "b800cc97757ea452e04c12b16b70a2847b5cb08c041b521e32e7347b05479d99",
+    "gear_sonic/trl/utils/torch_transform.py": "4d40e3ac765cb2541aacd8af60f1162914e4ce97b4cc8fadc871a7c6a2fe7b41",
+    "gear_sonic/trl/utils/kornia_transform.py": "576c2209f8f85f38c59c182d6f504cde34899adca68fea2ad50e626c5e03a0f1"
+  },
+  "fixture": "streaming_reference.txt",
+  "generator": "scripts/generate_streaming_reference.py",
+  "license": "Apache-2.0",
+  "scope": "Decoded synthetic SOMA joints; actual upstream adapter, smoothing disabled",
+  "fixture_sha256": "62a7346ccd1f3c55e04a6f9fcff9c1c18e9e0de615b0e7056a3a5f88a8c9de9e",
+  "rig_sha256": "515f7d5bb74be4e370e9adf5e779760ec3581556374c0b33212a32d13ab3b53f",
+  "fixture_torch": "2.7.1+cu128",
+  "fixture_device": "cpu",
+  "fixture_cases": 18
+}

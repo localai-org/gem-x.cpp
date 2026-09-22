@@ -28,6 +28,7 @@ jobs:
       - run: python3 scripts/seed_fuzz.py build/fuzz/corpus
       - run: build/fuzz/gemx-fuzz-inputs build/fuzz/corpus/inputs -max_total_time=20 -max_len=16384
       - run: build/fuzz/gemx-fuzz-api build/fuzz/corpus/api -max_total_time=20 -max_len=8192
+      - run: build/fuzz/gemx-fuzz-streaming -max_total_time=20 -max_len=4096
   demo:
     runs-on: ubuntu-24.04
     env:

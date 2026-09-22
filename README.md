@@ -9,7 +9,9 @@ and includes a browser demo for viewing the results.
 - **Recorded video:** upload a clip or record one with your webcam, inspect the
   reconstructed motion, and export an animated GLB for use in 3D tools.
 
-Robot control and SONIC integration are not included yet.
+Applications can also consume timestamped SOMA or SMPL poses through the
+[native streaming API](docs/MOTION-STREAMING.md). Robot control and the LocalAI
+network streaming adapter are separate integrations.
 
 ## Use the demo
 

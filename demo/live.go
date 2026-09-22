@@ -23,6 +23,8 @@ import (
 type liveSession struct {
 	id, dir                 string
 	width, height, sequence int
+	sourceTimed             bool
+	lastSourceTime          int64
 	mu                      sync.Mutex
 	ctx                     context.Context
 	pipelined               bool
@@ -180,6 +182,17 @@ func (a *app) liveRoute(w http.ResponseWriter, r *http.Request, parts []string) 
 		fail(w, 404, "not found")
 		return
 	}
+	// Optional for legacy clients. Once chosen, the source-clock mode is fixed.
+	timeHeader := r.Header.Get("X-GEMX-Source-Time-Us")
+	var sourceTime int64
+	if timeHeader != "" {
+		var err error
+		sourceTime, err = strconv.ParseInt(timeHeader, 10, 64)
+		if err != nil || sourceTime < 0 {
+			fail(w, 400, "invalid source timestamp")
+			return
+		}
+	}
 	requestStarted := time.Now()
 	frameIndex := 0
 	if s.pipelined {
@@ -258,6 +271,10 @@ func (a *app) liveRoute(w http.ResponseWriter, r *http.Request, parts []string) 
 		fail(w, 410, "live session ended")
 		return
 	}
+	if s.sequence > 0 && ((timeHeader != "") != s.sourceTimed || (s.sourceTimed && sourceTime <= s.lastSourceTime)) {
+		fail(w, 409, "source timestamp must increase and clock mode must remain unchanged")
+		return
+	}
 	workerAcquired := time.Now()
 	defer func() {
 		if s.pipelined {
@@ -281,7 +298,11 @@ func (a *app) liveRoute(w http.ResponseWriter, r *http.Request, parts []string) 
 		return
 	}
 	started := time.Now()
-	if _, err = fmt.Fprintln(s.input, "FRAME"); err != nil {
+	command := "FRAME"
+	if timeHeader != "" {
+		command = fmt.Sprintf("FRAME %d %d", s.sequence+1, sourceTime)
+	}
+	if _, err = fmt.Fprintln(s.input, command); err != nil {
 		s.cancel()
 		fail(w, 500, "live worker stopped: "+s.log.String())
 		return
@@ -299,6 +320,8 @@ func (a *app) liveRoute(w http.ResponseWriter, r *http.Request, parts []string) 
 		return
 	}
 	s.sequence++
+	s.sourceTimed = timeHeader != ""
+	s.lastSourceTime = sourceTime
 	if s.pipelined {
 		s.queueMu.Lock()
 		s.nextFrame++
@@ -309,6 +332,9 @@ func (a *app) liveRoute(w http.ResponseWriter, r *http.Request, parts []string) 
 	w.Header().Set("Server-Timing", fmt.Sprintf("prepare;dur=%.3f, queue;dur=%.3f, write;dur=%.3f, infer;dur=%.3f",
 		prepared.Sub(requestStarted).Seconds()*1000, workerAcquired.Sub(prepared).Seconds()*1000,
 		started.Sub(workerAcquired).Seconds()*1000, time.Since(started).Seconds()*1000))
+	if s.sourceTimed {
+		w.Header().Set("X-GEMX-Source-Time-Us", strconv.FormatInt(sourceTime, 10))
+	}
 	w.Header().Set("X-GEMX-Sequence", strconv.Itoa(s.sequence))
 	w.Header().Set("X-GEMX-People", fields[1])
 	w.Header().Set("X-GEMX-Inference-Ms", strconv.FormatInt(time.Since(started).Milliseconds(), 10))

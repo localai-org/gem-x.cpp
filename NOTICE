@@ -33,3 +33,9 @@ LocalAI branding asset, originally reused from kimodo.cpp. The name and logo
 identify the project, not NVIDIA or Meta endorsement. No third-party trademark
 rights are granted by the repository's source license.
 SAM3D demo styling: Copyright 2026 sam3d.cpp contributors, Apache-2.0.
+
+The SOMA-to-SMPL joint mapping and basis conversion follow NVIDIA's live bridge
+in GR00T-WholeBodyControl, Copyright (c) 2026 NVIDIA CORPORATION & AFFILIATES.
+All rights reserved. Apache-2.0. Exact revision, source hashes and independent
+fixture provenance are in reference/streaming-sources.json. No SONIC runtime,
+robot controller, publisher or model weights are included by this adapter.

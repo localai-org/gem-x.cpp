@@ -1,4 +1,5 @@
 #include "gemx.h"
+#include "gemx_stream.h"
 #include "live_detection.hpp"
 #include <algorithm>
 #include <array>
@@ -19,6 +20,7 @@
 #include <numeric>
 #include <unordered_map>
 #include <stdexcept>
+#include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -444,98 +446,50 @@ int offline_sequence(int argc,char **argv){
 // files are overwritten, so an arbitrarily long live session stays bounded.
 int live_worker(int argc,char **argv){
     if(argc!=12 && argc!=13)throw std::invalid_argument("usage: gemx-pipeline --live-worker DENOISER VITPOSE YOLOX MODULE CPU|Vulkan DEVICE DESCRIPTION|- THREADS WINDOW DIRECTORY [DETECT_INTERVAL]");
-    const uint32_t detect_interval=argc==13?number(argv[12]):1;
-    if(detect_interval<1||detect_interval>30)throw std::invalid_argument("detection interval 1..30 required");
-    live_detection_schedule detection_schedule(detect_interval);
-    std::array<float,4> box{};uint32_t detected=0;
-    const uint32_t threads=number(argv[9]),window=number(argv[10]);
-    if(threads<1||threads>8||window<2||window>120)throw std::invalid_argument("threads 1..8 and window 2..120 required");
-    char error[512]{};
-    auto cfg=config(argv[2],argv[5],argv[6],argv[8],number(argv[7]),threads,window);
-    gemx_session *raw=nullptr;api(gemx_session_create_live(&cfg,&raw,error,sizeof(error)),error);
-    session_ptr session(raw,gemx_session_destroy);
-    cfg.model_path=argv[3];cfg.graph_cache_capacity=1;
-    gemx_vitpose *vp=nullptr;api(gemx_vitpose_create(&cfg,&vp,error,sizeof(error)),error);
-    vitpose_ptr pose(vp,gemx_vitpose_destroy);
-    cfg.model_path=argv[4];gemx_yolox *yp=nullptr;
-    api(gemx_yolox_create(&cfg,&yp,error,sizeof(error)),error);yolox_ptr detector(yp,gemx_yolox_destroy);
-    struct observation {std::array<float,231> keypoints;std::array<float,3> box;};
-    std::deque<observation> history;
-    auto previous=std::chrono::steady_clock::now();uint32_t width=0,height=0;
-    const auto dir=std::filesystem::path(argv[11]);
-    std::cout<<"READY"<<std::endl;
-    std::ofstream profile;
-    if(const char *path=std::getenv("GEMX_LIVE_PROFILE")){
+    char error[512]{};gemx_live *raw=nullptr;
+    // The legacy worker respects its host's precision environment. The native
+    // API also offers explicit strict-F32 validation for direct clients.
+    api(gemx_live_create(argv[2],argv[3],argv[4],argv[5],argv[6],number(argv[7]),
+        std::strcmp(argv[8],"-")?argv[8]:nullptr,number(argv[9]),number(argv[10]),argc==13?number(argv[12]):1,
+        GEMX_LIVE_PARITY,GEMX_LIVE_BACKEND_DEFAULT,GEMX_LIVE_FRAME_INDEX,2000000,&raw,error,sizeof(error)),error);
+    std::unique_ptr<gemx_live,decltype(&gemx_live_destroy)> pipeline(raw,gemx_live_destroy);
+    std::array<int32_t,77> parents;api(gemx_live_topology(raw,parents.data(),77,error,sizeof(error)),error);
+    const auto dir=std::filesystem::path(argv[11]);std::cout<<"READY"<<std::endl;
+    std::ofstream profile;if(const char*path=std::getenv("GEMX_LIVE_PROFILE")){
         profile.open(path);if(!profile)throw std::runtime_error("cannot open live profile");
         profile<<"frame,context,read_ms,detector_ms,vitpose_ms,gem_decode_ms,world_skeleton_ms,camera_skeleton_ms,write_ms,total_ms,detector_ran\n";
     }
-    uint64_t frame_index=0;
+    const auto origin=std::chrono::steady_clock::now();uint64_t index=0;int64_t previous=-1;
     std::string command;
     while(std::getline(std::cin,command)){
-        if(command=="RESET"){history.clear();detection_schedule.reset();std::cout<<"RESET"<<std::endl;continue;}
-        if(command!="FRAME")throw std::invalid_argument("invalid live command");
-        const auto started=std::chrono::steady_clock::now();auto mark=started;
-        std::array<double,7> timings{};
-        bool detector_ran=false;
-        auto stage=[&](size_t i){if(!profile.is_open())return;const auto now=std::chrono::steady_clock::now();timings[i]=std::chrono::duration<double,std::milli>(now-mark).count();mark=now;};
-        auto record=[&](uint32_t context){if(profile.is_open()){profile<<frame_index<<','<<context;for(double t:timings)profile<<','<<t;
-            profile<<','<<std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count()<<','<<detector_ran<<'\n';}++frame_index;};
-        const auto image=load_image((dir/"frame.input").string());
-        if(image.width!=width||image.height!=height||std::chrono::steady_clock::now()-previous>std::chrono::seconds(2)){
-            history.clear();detection_schedule.reset();
+        if(command=="RESET"){api(gemx_live_reset(raw,error,sizeof(error)),error);previous=-1;std::cout<<"RESET"<<std::endl;continue;}
+        uint64_t seq=index;int64_t timestamp=std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now()-origin).count();
+        if(command!="FRAME"){
+            std::istringstream in(command);std::string word,sequence_text,extra;in>>word>>sequence_text>>timestamp;
+            auto parsed=std::from_chars(sequence_text.data(),sequence_text.data()+sequence_text.size(),seq);
+            if(!in||word!="FRAME"||parsed.ec!=std::errc{}||parsed.ptr!=sequence_text.data()+sequence_text.size()||(in>>extra))throw std::invalid_argument("invalid live frame command");
+        }else{
+            if(previous==std::numeric_limits<int64_t>::max())throw std::invalid_argument("source clock exhausted; reset required");
+            timestamp=std::max(timestamp,previous+1);
+        } // legacy file ingestion time
+        const auto start=std::chrono::steady_clock::now();auto image=load_image((dir/"frame.input").string());
+        const auto read_end=std::chrono::steady_clock::now();gemx_live_result*result=nullptr;
+        api(gemx_live_submit(raw,image.rgb.data(),image.rgb.size(),image.width,image.height,image.stride,seq,timestamp,nullptr,0,0,&result,error,sizeof(error)),error);
+        std::unique_ptr<gemx_live_result,decltype(&gemx_live_result_destroy)> owned(result,gemx_live_result_destroy);
+        uint64_t sequence,epoch,track;int64_t source_time;uint32_t status,flags;
+        api(gemx_live_result_info(result,&sequence,&source_time,&epoch,&track,&status,&flags,error,sizeof(error)),error);
+        auto copy=[&](uint32_t channel,auto&output){uint64_t count=0;api(gemx_live_result_copy(result,channel,output.data(),output.size(),&count,error,sizeof(error)),error);if(count!=output.size())throw std::runtime_error("live channel count");};
+        std::array<float,9> metrics;copy(GEMX_LIVE_METRICS,metrics);
+        const auto write_start=std::chrono::steady_clock::now();
+        if(status==GEMX_LIVE_POSE){pose_sample sample;sample.parents=parents;
+            copy(GEMX_LIVE_POSITIONS,sample.positions);copy(GEMX_LIVE_ROTATIONS,sample.rotations);copy(GEMX_LIVE_TRANSLATIONS,sample.local_translations);
+            copy(GEMX_LIVE_CAMERA_POSITIONS,sample.camera_positions);copy(GEMX_LIVE_CAMERA_TRANSLATION,sample.camera);copy(GEMX_LIVE_KEYPOINTS,sample.keypoints);
+            save_pose((dir/"pose.gpose").string(),sample);
         }
-        width=image.width;height=image.height;
-        gemx_rgb_frame frame{image.rgb.data(),image.rgb.size(),width,height,image.stride,{}};
-        stage(0);
-        detector_ran=detection_schedule.due();
-        std::array<gemx_detection,100> detections{};
-        if(detector_ran){
-            api(gemx_yolox_detect(detector.get(),&frame,.5f,.45f,detections.data(),detections.size(),&detected,error,sizeof(error)),error);
-            detection_schedule.detected(detected>0);
-        }
-        stage(1);
-        // Upstream recreates ByteTrack each frame: largest area wins.
-        if(detector_ran){
-            box={0,0,float(width-1),float(height-1)};float area=-1;
-            for(uint32_t i=0;i<detected;++i){const auto &b=detections[i].box;float a=std::max(0.f,b[2]-b[0])*std::max(0.f,b[3]-b[1]);
-                if(a>area){area=a;std::copy_n(b,4,box.data());}}
-            for(int i=0;i<4;++i)box[i]=std::clamp(box[i],0.f,float(i%2?height-1:width-1));
-        }
-        observation current{};current.box={(box[0]+box[2])*.5f,(box[1]+box[3])*.5f,std::max(box[3]-box[1],(box[2]-box[0])/.75f)*1.2f};
-        std::copy(current.box.begin(),current.box.end(),frame.box);
-        api(gemx_vitpose_infer_rgb(pose.get(),&frame,1,current.keypoints.data(),231,error,sizeof(error)),error);
-        stage(2);
-        history.push_back(current);if(history.size()>window)history.pop_front();
-        const uint32_t n=history.size();
-        if(n<2){record(n);previous=std::chrono::steady_clock::now();std::cout<<"WARMUP "<<detected<<std::endl;continue;}
-        std::vector<float> kp(n*231),boxes(n*3),K(n*9),angular(n*6);
-        for(uint32_t i=0;i<n;++i){
-            std::copy(history[i].keypoints.begin(),history[i].keypoints.end(),kp.begin()+i*231);
-            std::copy(history[i].box.begin(),history[i].box.end(),boxes.begin()+i*3);
-            const float f=float(std::max(width,height));const std::array<float,9> k{f,0,width*.5f,0,f,height*.5f,0,0,1};
-            std::copy(k.begin(),k.end(),K.begin()+i*9);angular[i*6]=angular[i*6+4]=1;
-        }
-        gemx_sequence_view input{n,kp.data(),boxes.data(),K.data(),nullptr,angular.data()};
-        std::vector<float> body(n*228),identity(n*45),scales(n*69),oc(n*3),tc(n*3),ow(n*3),tw(n*3);
-        gemx_motion_view motion{n,body.data(),identity.data(),scales.data(),oc.data(),tc.data(),ow.data(),tw.data()};
-        api(gemx_infer_motion(session.get(),&input,&motion,error,sizeof(error)),error);
-        stage(3);
-        // Decode the complete context, then build ONLY its newest frame. This
-        // preserves upstream's per-frame shape and gravity-aligned orientation.
-        const uint32_t last=n-1;std::array<float,3> origin{};pose_sample sample;
-        gemx_motion_view newest{1,body.data()+last*228,identity.data()+last*45,scales.data()+last*69,
-            oc.data()+last*3,tc.data()+last*3,ow.data()+last*3,origin.data()};
-        gemx_skeleton_view skeleton{1,sample.positions.data(),sample.rotations.data(),sample.parents.data(),sample.local_translations.data()};
-        api(gemx_build_skeleton(session.get(),&newest,&skeleton,error,sizeof(error)),error);
-        stage(4);
-        pose_sample camera_sample;newest.global_orient_world=newest.global_orient_camera;
-        gemx_skeleton_view camera_skeleton{1,sample.camera_positions.data(),camera_sample.rotations.data(),nullptr,camera_sample.local_translations.data()};
-        api(gemx_build_skeleton(session.get(),&newest,&camera_skeleton,error,sizeof(error)),error);
-        stage(5);
-        sample.keypoints=current.keypoints;std::copy_n(newest.translation_camera,3,sample.camera.data());
-        save_pose((dir/"pose.gpose").string(),sample);
-        stage(6);record(n);
-        previous=std::chrono::steady_clock::now();std::cout<<"POSE "<<detected<<std::endl;
+        auto elapsed=[](auto a,auto b){return std::chrono::duration<double,std::milli>(b-a).count();};
+        const auto end=std::chrono::steady_clock::now();
+        if(profile){profile<<index<<','<<metrics[7]<<','<<elapsed(start,read_end);for(int i=0;i<5;++i)profile<<','<<metrics[i];profile<<','<<elapsed(write_start,end)<<','<<elapsed(start,end)<<','<<bool(flags&GEMX_LIVE_DETECTOR_RAN)<<'\n';}
+        previous=source_time;++index;std::cout<<(status==GEMX_LIVE_POSE?"POSE ":"WARMUP ")<<uint32_t(metrics[6])<<std::endl;
     }
     return 0;
 }

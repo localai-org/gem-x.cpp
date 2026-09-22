@@ -1,0 +1,133 @@
+{
+  "frames": 1440,
+  "startup_seconds": 1.740794022101909,
+  "replay_seconds": 101.95169306360185,
+  "frames_per_second": 14.124336307997025,
+  "source_step_us": 83333,
+  "detector_calls": 294,
+  "detect_interval": 5,
+  "warmup": {
+    "read_ms": {
+      "mean": 0.03732503448275862,
+      "median": 0.033385,
+      "p95": 0.054074,
+      "p99": 0.054274
+    },
+    "detector_ms": {
+      "mean": 76.80711344827586,
+      "median": 3e-05,
+      "p95": 63.1256,
+      "p99": 1937.23
+    },
+    "vitpose_ms": {
+      "mean": 121.99770689655172,
+      "median": 48.764,
+      "p95": 50.1228,
+      "p99": 2168.22
+    },
+    "gem_decode_ms": {
+      "mean": 154.08770862068965,
+      "median": 4.23019,
+      "p95": 859.516,
+      "p99": 1011.17
+    },
+    "world_skeleton_ms": {
+      "mean": 0.32167468965517243,
+      "median": 0.315176,
+      "p95": 0.44244,
+      "p99": 0.487416
+    },
+    "camera_skeleton_ms": {
+      "mean": 0.008869172413793104,
+      "median": 0.009318,
+      "p95": 0.011422,
+      "p99": 0.012915
+    },
+    "write_ms": {
+      "mean": 0.15360862068965517,
+      "median": 0.154778,
+      "p95": 0.198021,
+      "p99": 0.226585
+    },
+    "total_ms": {
+      "mean": 353.4239931034483,
+      "median": 53.9115,
+      "p95": 1061.8,
+      "p99": 4105.51
+    }
+  },
+  "steady": {
+    "read_ms": {
+      "mean": 0.037636746279234586,
+      "median": 0.035107,
+      "p95": 0.056329,
+      "p99": 0.066468
+    },
+    "detector_ms": {
+      "mean": 11.343439164422396,
+      "median": 3e-05,
+      "p95": 55.6255,
+      "p99": 55.9955
+    },
+    "vitpose_ms": {
+      "mean": 48.780372501771794,
+      "median": 48.7286,
+      "p95": 49.126,
+      "p99": 50.5764
+    },
+    "gem_decode_ms": {
+      "mean": 3.7471906094968106,
+      "median": 3.72072,
+      "p95": 3.81402,
+      "p99": 4.37203
+    },
+    "world_skeleton_ms": {
+      "mean": 0.3570832636428065,
+      "median": 0.320997,
+      "p95": 0.416751,
+      "p99": 0.521151
+    },
+    "camera_skeleton_ms": {
+      "mean": 0.011191594613749115,
+      "median": 0.010971,
+      "p95": 0.013636,
+      "p99": 0.018025
+    },
+    "write_ms": {
+      "mean": 0.17797950389794473,
+      "median": 0.172251,
+      "p95": 0.213189,
+      "p99": 0.257826
+    },
+    "total_ms": {
+      "mean": 64.46847498228207,
+      "median": 53.1627,
+      "p95": 108.567,
+      "p99": 109.954
+    }
+  },
+  "hardware": "NVIDIA GeForce RTX 5070 Ti 16 GB",
+  "backend": "Vulkan strict F32",
+  "threads": 8,
+  "window": 30,
+  "resolution": [
+    480,
+    270
+  ],
+  "source_frames": 72,
+  "repeats": 20,
+  "observations": "synthetic 83333 us source spacing; no smoothing; parity selection",
+  "rss_kib": {
+    "at_frame_30": 329936,
+    "peak": 334736,
+    "final": 334720,
+    "final_720_min": 334720,
+    "final_720_max": 334720
+  },
+  "parity": {
+    "accepted_reference_poses": 143,
+    "byte_identical_prefix": true,
+    "pose_hashes_sha256": "5b3b6c4d8f76b1ee6722a6768d154c1b1b45612d9ef8403b991c527bcd0cc6fd"
+  },
+  "scope": "Resident worker; excludes camera/JPEG/HTTP. Model load separately timed. Host process RSS, not GPU memory."
+}

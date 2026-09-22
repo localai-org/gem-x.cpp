@@ -75,6 +75,7 @@ liveStart.onclick=async()=>{
     const buffers=Array.from({length:2},()=>{const c=document.createElement('canvas');c.width=width;c.height=height;return c});
     liveDisplayed=document.createElement('canvas');liveDisplayed.width=width;liveDisplayed.height=height;
     job={width,height};view.value='overlay';let previousResult=null,encodeMs=5,transportMs=4,plainMs=55,detectMs=110,nextDetection=1;
+    const sourceOrigin=performance.now();
     const signal=liveAbort.signal,url=`/api/live/${liveID}/frame`;
     const submit=async(index,earliest=0)=>{
       await new Promise(resolve=>setTimeout(resolve,Math.max(0,earliest-performance.now())));
@@ -85,7 +86,7 @@ liveStart.onclick=async()=>{
       const blob=await jpeg(capture);if(epoch!==liveEpoch)return null;
       const sent=performance.now();encodeMs=.75*encodeMs+.25*(sent-captured);
       const result=(async()=>{
-        const response=await fetch(url,{method:'PUT',headers:{'Content-Type':'image/jpeg','X-GEMX-Frame':String(index)},body:blob,signal});
+        const response=await fetch(url,{method:'PUT',headers:{'Content-Type':'image/jpeg','X-GEMX-Frame':String(index),'X-GEMX-Source-Time-Us':String(Math.round((captured-sourceOrigin)*1000))},body:blob,signal});
         if(!response.ok){const error=await response.json();throw new Error(error.error||'Live inference failed')}
         if(Number(response.headers.get('X-GEMX-Sequence'))!==index)throw new Error('Live frame sequence mismatch');
         const pose=response.status===204?null:parsePose(await response.arrayBuffer());

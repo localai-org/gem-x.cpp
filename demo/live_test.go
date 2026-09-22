@@ -24,6 +24,7 @@ printf '%s' "${12}" > "${11}/detect-interval"
 printf 'READY\n'
 n=0
 while read command; do
+ printf '%s\n' "$command" > "${11}/last-command"
  n=$((n+1))
  if test "$n" = 1; then printf 'WARMUP 1\n'; else
   printf GEMPOSE2 > "${11}/pose.gpose"
@@ -253,5 +254,39 @@ func TestLivePipelineCancellationUnblocksQueue(t *testing.T) {
 	}
 	if _, err := os.Stat(s.dir); !os.IsNotExist(err) {
 		t.Fatalf("live directory retained: %v", err)
+	}
+}
+
+func TestLiveSourceTime(t *testing.T) {
+	a := testLiveApp(t)
+	path := startTestLive(t, a)
+	frame := livePNG(t, 16)
+	send := func(value string) *httptest.ResponseRecorder {
+		r := httptest.NewRequest("PUT", path+"/frame", bytes.NewReader(frame))
+		r.Header.Set("X-GEMX-Source-Time-Us", value)
+		w := httptest.NewRecorder()
+		a.route(w, r)
+		return w
+	}
+	for _, value := range []string{"-1", "1.5", "9223372036854775808"} {
+		if w := send(value); w.Code != 400 {
+			t.Fatalf("invalid time %s: %d", value, w.Code)
+		}
+	}
+	// Preserve int64 timestamps above JavaScript's exact-number range.
+	if w := send("9007199254740993"); w.Code != 204 || w.Header().Get("X-GEMX-Source-Time-Us") != "9007199254740993" {
+		t.Fatalf("first: %d %v", w.Code, w.Header())
+	}
+	for _, value := range []string{"9007199254740993", "9007199254740992", ""} {
+		if w := send(value); w.Code != 409 {
+			t.Fatalf("ordering/mode %s: %d", value, w.Code)
+		}
+	}
+	if w := send("9007199254740994"); w.Code != 200 || w.Header().Get("X-GEMX-Sequence") != "2" {
+		t.Fatalf("next: %d %s", w.Code, w.Body)
+	}
+	command, err := os.ReadFile(filepath.Join(a.live.dir, "last-command"))
+	if err != nil || string(command) != "FRAME 2 9007199254740994\n" {
+		t.Fatalf("worker source time: %q %v", command, err)
 	}
 }

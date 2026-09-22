@@ -24,7 +24,8 @@ def summarize(rows):
             continue
         values = sorted(float(r[name]) for r in rows)
         result[name] = dict(mean=statistics.mean(values), median=statistics.median(values),
-                            p95=values[min(len(values)-1, int(.95*len(values)))])
+                            p95=values[min(len(values)-1, int(.95*len(values)))],
+                            p99=values[min(len(values)-1, int(.99*len(values)))])
     return result
 
 
@@ -38,12 +39,14 @@ def main():
     p.add_argument('--output', type=Path, required=True)
     p.add_argument('--repeats', type=int, default=3)
     p.add_argument('--detect-interval',type=int,default=1)
+    p.add_argument('--source-step-us',type=int,help='Synthetic replay source cadence; independent of shader/model execution time')
     p.add_argument('--save-poses',action='store_true',help='Keep outputs for quality comparisons')
     p.add_argument('--compare', type=Path, help='Previous report whose per-frame pose hashes must match exactly')
     p.add_argument('--device',type=int,default=0)
     p.add_argument('--device-name',default='',help='Optional exact device description; otherwise select by index')
     a = p.parse_args()
     if len(os.sched_getaffinity(0))>8:p.error('restrict CPU affinity to at most eight cores')
+    if a.source_step_us is not None and a.source_step_us<=0:p.error('source-step-us must be positive')
     if not 1<=a.detect_interval<=30:p.error('detection interval must be 1..30')
     if not 1 <= a.repeats <= 20:
         p.error('repeats must be 1..20')
@@ -66,27 +69,32 @@ def main():
     cmd += [str((a.module or a.root/'build/vulkan/bin/libggml-vulkan.so').resolve()),'Vulkan',str(a.device),a.device_name or '-','8','30',str(a.output)]
     cmd += [str(a.detect_interval)]
     started = time.monotonic()
-    hashes = []
+    hashes = [];rss = []
     with (a.output/'worker.log').open('w') as log:
         worker = subprocess.Popen(cmd,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log,text=True,env=env)
         try:
             assert worker.stdout.readline().strip() == 'READY', 'worker startup failed; see worker.log'
             startup = time.monotonic()-started
+            replay_started = time.monotonic()
             for index, data in enumerate(inputs*a.repeats):
                 (a.output/'frame.input').write_bytes(data)
-                worker.stdin.write('FRAME\n');worker.stdin.flush()
+                worker.stdin.write(f'FRAME {index} {index*a.source_step_us}\n' if a.source_step_us else 'FRAME\n');worker.stdin.flush()
                 reply = worker.stdout.readline().strip()
                 assert reply.startswith('POSE ') or index == 0 and reply.startswith('WARMUP '), reply
+                status = Path(f'/proc/{worker.pid}/status').read_text()
+                rss.append(int(next(line.split()[1] for line in status.splitlines() if line.startswith('VmRSS:'))))
                 if reply.startswith('POSE '):
                     data=(a.output/'pose.gpose').read_bytes()
                     hashes.append(hashlib.sha256(data).hexdigest())
                     if a.save_poses:(a.output/f'{index:06d}.gpose').write_bytes(data)
+            replay_seconds = time.monotonic()-replay_started
             worker.stdin.close();assert worker.wait(timeout=30)==0
         finally:
             if worker.poll() is None:
                 worker.kill();worker.wait()
     rows = list(csv.DictReader((a.output/'stages.csv').open()))
-    report = dict(startup_seconds=startup,frames=len(rows),pose_hashes=hashes,detect_interval=a.detect_interval,
+    report = dict(startup_seconds=startup,replay_seconds=replay_seconds,frames_per_second=len(rows)/replay_seconds,
+                  source_step_us=a.source_step_us,rss_kib=rss,frames=len(rows),pose_hashes=hashes,detect_interval=a.detect_interval,
                   detector_calls=sum(int(r['detector_ran']) for r in rows),
                   warmup=summarize([r for r in rows if int(r['context'])<30]),
                   steady=summarize([r for r in rows if int(r['context'])==30]))

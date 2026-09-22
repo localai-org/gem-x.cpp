@@ -29,6 +29,8 @@ if(GEMX_ENABLE_GGML)
 endif()
 
 add_library(gemx SHARED
+  src/live.cpp
+  src/smpl.cpp
   src/backend.cpp
   src/gemx.cpp
   src/inference.cpp
@@ -67,6 +69,9 @@ if(GEMX_SANITIZERS)
   target_link_libraries(gemx PUBLIC gemx_sanitizers)
 endif()
 
+add_executable(gemx-live-stream examples/live_stream.cpp)
+target_compile_features(gemx-live-stream PRIVATE cxx_std_23)
+target_link_libraries(gemx-live-stream PRIVATE gemx)
 add_executable(gemx-pipeline tools/pipeline.cpp)
 target_compile_features(gemx-pipeline PRIVATE cxx_std_23)
 target_link_libraries(gemx-pipeline PRIVATE gemx)
@@ -76,6 +81,13 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
 endif()
 
 if(BUILD_TESTING)
+  add_executable(gemx-streaming-models-test tests/test_streaming_models.cpp)
+  target_compile_features(gemx-streaming-models-test PRIVATE cxx_std_23)
+  target_link_libraries(gemx-streaming-models-test PRIVATE gemx)
+  add_executable(gemx-streaming-test tests/test_streaming.cpp)
+  target_compile_features(gemx-streaming-test PRIVATE cxx_std_23)
+  target_link_libraries(gemx-streaming-test PRIVATE gemx)
+  add_test(NAME gemx_streaming_contract COMMAND gemx-streaming-test ${CMAKE_CURRENT_SOURCE_DIR}/reference/streaming_reference.txt)
   add_executable(gemx-inputs-test tests/test_inputs.cpp)
   target_compile_features(gemx-inputs-test PRIVATE cxx_std_23)
   target_link_libraries(gemx-inputs-test PRIVATE gemx)
@@ -134,7 +146,7 @@ endif()
 
 install(TARGETS gemx EXPORT gemxTargets)
 install(TARGETS gemx-pipeline RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
-install(FILES include/gemx.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
+install(FILES include/gemx_stream.h include/gemx.h DESTINATION ${CMAKE_INSTALL_INCLUDEDIR})
 
 option(GEMX_FUZZ "Build non-GGUF libFuzzer targets (Clang, ASan/UBSan)" OFF)
 if(GEMX_FUZZ)
@@ -142,7 +154,7 @@ if(GEMX_FUZZ)
     message(FATAL_ERROR "GEMX_FUZZ requires Clang and GEMX_SANITIZERS=ON")
   endif()
   target_compile_options(gemx PRIVATE -fsanitize=fuzzer-no-link)
-  foreach(name inputs api)
+  foreach(name inputs api streaming)
     add_executable(gemx-fuzz-${name} fuzz/${name}.cpp)
     target_compile_features(gemx-fuzz-${name} PRIVATE cxx_std_23)
     target_compile_options(gemx-fuzz-${name} PRIVATE -fsanitize=fuzzer)

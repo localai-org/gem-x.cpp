@@ -153,3 +153,11 @@ The demo automatically looks for the worker and Vulkan module in
 `sam3d.cpp/build/vulkan-bf16-performance/bin/`. Use the path overrides above
 if reusing an existing SAM3D installation. Live-only users can skip this build
 and the Body model preparation.
+
+## Native stream integration
+
+The live worker calls the reusable [native streaming API](../docs/MOTION-STREAMING.md).
+The browser supplies monotonic source sample timestamps before encoding/upload;
+these pass through the server as int64 microseconds. The preview wire format is
+unchanged. This demo HTTP API is separate from the proposed LocalAI public
+Protobuf/WebSocket protocol.

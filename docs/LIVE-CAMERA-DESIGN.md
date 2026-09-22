@@ -7,6 +7,9 @@ the actual upstream example. See [the parity report](LIVE-OFFLINE-PARITY.md).
 The demo now has live camera transport and controls. Browser validation uses
 a simulated webcam; no physical camera or robot session was run.
 
+The orchestration is now available through the [native streaming API](MOTION-STREAMING.md),
+including source timing, reset/selection semantics and the pinned SOMA-to-SMPL adapter.
+
 ## What upstream actually runs
 
 The camera example estimates a person box and ViTPose observations for each
