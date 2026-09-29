@@ -40,6 +40,12 @@ typedef struct gemx_live_result gemx_live_result;
 #define GEMX_LIVE_METRICS 11u /* detector/vitpose/GEM/world/camera ms, source dt us,
  detector count, context size, selected detector confidence (-1 unavailable) */
 #define GEMX_LIVE_IDENTITY 12u /* 45 frame-specific SOMA identity coefficients */
+/* Optional capability advertised as channels.root_displacement=3. Metres over
+ * the previous accepted observation -> this observation, in this result's SMPL
+ * anchor-local basis. Rotate by SMPL anchor to reconstruct Z-up displacement.
+ * Not metres/second; do not integrate across tracking resets or missing intervals.
+ * root_translation stays zero; rolling-window absolute translations are not joined. */
+#define GEMX_LIVE_ROOT_DISPLACEMENT 14u
 #define GEMX_LIVE_SCALES 13u /* 69 frame-specific SOMA scales */
 /* threads 1..8, window 2..120, cadence 1..30, max_gap_us>0. Frame-index
  * temporal policy only. F32 weights required. Strict Vulkan requires host-set
@@ -76,6 +82,10 @@ GEMX_API void gemx_live_result_destroy(gemx_live_result *result);
 GEMX_API gemx_status gemx_live_result_info(const gemx_live_result *result,
  uint64_t *sequence,int64_t *source_time_us,uint64_t *epoch,uint64_t *track_epoch,
  uint32_t *outcome,uint32_t *flags,char *error,uint64_t error_capacity);
+/* Exact source timestamp of the previous observation used for channel 14.
+ * Only pose results have an interval. Same source clock as result_info. */
+GEMX_API gemx_status gemx_live_result_interval_start(const gemx_live_result *result,
+ int64_t *source_time_us,char *error,uint64_t error_capacity);
 GEMX_API gemx_status gemx_live_result_copy(const gemx_live_result *result,
  uint32_t channel,float *output,uint64_t capacity,uint64_t *required,
  char *error,uint64_t error_capacity);

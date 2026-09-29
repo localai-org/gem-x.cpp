@@ -14,14 +14,14 @@ namespace {
 using clock_type=std::chrono::steady_clock;
 using gemx::require;
 void call(gemx_status s,const char*err){if(s!=GEMX_OK)throw std::runtime_error(err);}
-struct observation {std::array<float,231> keypoints{};std::array<float,3> box{};};
+struct observation {int64_t timestamp=0;std::array<float,231> keypoints{};std::array<float,3> box{};};
 std::string quote(const std::string&s){std::string r="\"";for(unsigned char c:s){if(c=='"'||c=='\\'){r+='\\';r+=char(c);}else if(c<32){const char*hex="0123456789abcdef";r+="\\u00";r+=hex[c>>4];r+=hex[c&15];}else r+=char(c);}return r+'"';}
 template<class T> void array(std::ostream&o,const T&v){o<<'[';bool first=true;for(auto x:v){if(!first)o<<',';first=false;o<<x;}o<<']';}
 void names(std::ostream&o,const std::vector<std::string>&v){o<<'[';for(size_t i=0;i<v.size();++i){if(i)o<<',';o<<quote(v[i]);}o<<']';}
 }
 struct gemx_live_result {
- uint64_t sequence=0,epoch=0,track=0;int64_t timestamp=0;uint32_t outcome=GEMX_LIVE_WARMUP,flags=0;
- std::array<std::vector<float>,14> data;
+ uint64_t sequence=0,epoch=0,track=0;int64_t timestamp=0,interval_start=0;uint32_t outcome=GEMX_LIVE_WARMUP,flags=0;
+ std::array<std::vector<float>,15> data;
 };
 struct gemx_live {
  std::mutex mutex;
@@ -66,7 +66,7 @@ std::string definition(gemx_live&p){
  o<<",\"rest_local_rotations\":";array(o,smpl_rest_rotations);
  o<<",\"rest_rotation_policy\":\"identity point-coordinate frames, not fitted SMPL joint rotations\",\"soma_y_to_z_matrix_row_major\":[1,0,0,0,0,-1,0,1,0]}";
  o<<",\"channel_spaces\":{\"positions\":\"soma77 gravity-aligned Y-up, root translation removed only\",\"local_rotations\":\"soma77 parent-local xyzw\",\"local_translations\":\"soma77 parent-local metres\",\"root_axis_angle\":\"SOMA gravity-aligned Y-up axis-angle radians\",\"root_translation\":\"zero, no continuous world trajectory\",\"camera_positions\":\"SOMA camera-oriented root-relative metres\",\"camera_translation\":\"add to camera_positions for perspective projection with f=max(width,height) and image-centre principal point\",\"keypoints\":\"source pixel x/y and 2D confidence, not 3D confidence\",\"box\":\"source pixel xyxy\",\"identity\":\"current emitted-frame SOMA identity coefficients\",\"scales\":\"current emitted-frame SOMA scale parameters\"}";
- o<<",\"channels\":{\"positions\":231,\"local_rotations\":308,\"local_translations\":231,\"smpl_joints\":72,\"smpl_anchor\":4,\"root_axis_angle\":3,\"root_translation\":3,\"camera_positions\":231,\"camera_translation\":3,\"keypoints\":231,\"box\":4,\"metrics\":9,\"identity\":45,\"scales\":69}}";
+ o<<",\"channels\":{\"positions\":231,\"local_rotations\":308,\"local_translations\":231,\"smpl_joints\":72,\"smpl_anchor\":4,\"root_axis_angle\":3,\"root_translation\":3,\"camera_positions\":231,\"camera_translation\":3,\"keypoints\":231,\"box\":4,\"metrics\":9,\"identity\":45,\"scales\":69,\"root_displacement\":3}}";
  return o.str();
 }
 }
@@ -96,9 +96,12 @@ gemx_status gemx_live_reset(gemx_live*p,char*err,uint64_t cap){return gemx::boun
 gemx_status gemx_live_result_info(const gemx_live_result*r,uint64_t*s,int64_t*t,uint64_t*e,uint64_t*track,uint32_t*status,uint32_t*flags,char*err,uint64_t cap){
  return gemx::boundary(err,cap,[&]{require(r&&s&&t&&e&&track&&status&&flags,"result and output pointers required");*s=r->sequence;*t=r->timestamp;*e=r->epoch;*track=r->track;*status=r->outcome;*flags=r->flags;});
 }
+gemx_status gemx_live_result_interval_start(const gemx_live_result*r,int64_t*start,char*err,uint64_t cap){
+ return gemx::boundary(err,cap,[&]{require(r&&start&&r->outcome==GEMX_LIVE_POSE,"pose result required");*start=r->interval_start;});
+}
 gemx_status gemx_live_result_copy(const gemx_live_result*r,uint32_t channel,float*out,uint64_t capacity,uint64_t*required,char*err,uint64_t cap){
  if(required)*required=0;
- return gemx::boundary(err,cap,[&]{require(r&&channel<14&&required&&(out||!capacity),"invalid result buffer/channel");const auto&d=r->data[channel];*required=d.size();if(!out&&!capacity)return;require(capacity>=*required,"result capacity too small");std::copy(d.begin(),d.end(),out);});
+ return gemx::boundary(err,cap,[&]{require(r&&channel<15&&required&&(out||!capacity),"invalid result buffer/channel");const auto&d=r->data[channel];*required=d.size();if(!out&&!capacity)return;require(capacity>=*required,"result capacity too small");std::copy(d.begin(),d.end(),out);});
 }
 gemx_status gemx_live_submit(gemx_live*p,const uint8_t*rgb,uint64_t capacity,uint32_t w,uint32_t h,uint64_t stride,uint64_t seq,int64_t time,const float*box,uint64_t box_count,uint64_t subject,gemx_live_result**out,char*err,uint64_t cap){
  if(out)*out=nullptr;
@@ -136,7 +139,7 @@ gemx_status gemx_live_submit(gemx_live*p,const uint8_t*rgb,uint64_t capacity,uin
    if(usable)result->data[GEMX_LIVE_BOX].assign(state.box.begin(),state.box.end());
    metrics[8]=state.confidence;
    if(usable){
-    observation current{};const auto&b=state.box;
+    observation current{};current.timestamp=time;const auto&b=state.box;
     current.box={(b[0]+b[2])*.5f,(b[1]+b[3])*.5f,std::max(b[3]-b[1],(b[2]-b[0])/.75f)*1.2f};std::copy(current.box.begin(),current.box.end(),frame.box);
     call(gemx_vitpose_infer_rgb(p->pose.get(),&frame,1,current.keypoints.data(),231,message,sizeof(message)),message);stage(1);
     result->data[GEMX_LIVE_KEYPOINTS].assign(current.keypoints.begin(),current.keypoints.end());
@@ -157,6 +160,22 @@ gemx_status gemx_live_submit(gemx_live*p,const uint8_t*rgb,uint64_t capacity,uin
      d[12].assign(newest.identity_coeffs,newest.identity_coeffs+45);d[13].assign(newest.scale_params,newest.scale_params+69);
      newest.global_orient_world=newest.global_orient_camera;auto cs=p->session->skeleton(newest);d[7]=std::move(cs.positions);d[8].assign(newest.translation_camera,newest.translation_camera+3);stage(4);
      d[3].resize(72);d[4].resize(4);call(gemx_soma_to_smpl(d[0].data(),231,d[5].data(),3,d[3].data(),72,d[4].data(),4,message,sizeof(message)),message);
+     result->interval_start=history[last-1].timestamp;
+     // Use the last CLOSED interval of this decoded window. The current
+     // frame's predicted velocity refers to an interval not yet observed.
+     const float *previous = tw.data() + (last - 1) * 3;
+     const float *end = tw.data() + last * 3;
+     const std::array<float,3> delta{end[0]-previous[0], -(end[2]-previous[2]), end[1]-previous[1]};
+     const auto &q = d[4];
+     const std::array<float,3> inverse_axis{-q[1],-q[2],-q[3]};
+     auto cross = [](const auto &a, const auto &b) {
+      return std::array<float,3>{a[1]*b[2]-a[2]*b[1], a[2]*b[0]-a[0]*b[2], a[0]*b[1]-a[1]*b[0]};
+     };
+     const auto first_cross = cross(inverse_axis, delta);
+     const auto second_cross = cross(inverse_axis, first_cross);
+     d[GEMX_LIVE_ROOT_DISPLACEMENT].resize(3);
+     for(size_t axis=0; axis<3; ++axis)
+      d[GEMX_LIVE_ROOT_DISPLACEMENT][axis] = delta[axis] + 2*q[0]*first_cross[axis] + 2*second_cross[axis];
      result->outcome=GEMX_LIVE_POSE;
     }
    }
