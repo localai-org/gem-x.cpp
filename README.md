@@ -1,5 +1,9 @@
 # gem-x.cpp
 
+**Brought to you by the [LocalAI](https://github.com/mudler/LocalAI) team**, the folks behind LocalAI, the open-source AI engine that runs any model (LLMs, vision, voice, image, video) on any hardware, no GPU required.
+
+[![LocalAI](https://img.shields.io/badge/LocalAI-Run_Locally-orange)](https://github.com/mudler/LocalAI)
+
 Turn webcam movements or recorded videos into an animated 3D human skeleton.
 Built on [NVIDIA GEM-X](https://github.com/NVlabs/GEM-X), gem-x.cpp runs locally
 and includes a browser demo for viewing the results.
